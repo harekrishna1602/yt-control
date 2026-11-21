@@ -10,7 +10,7 @@ import java.util.Locale
 data class EnvironmentProfile(
     val id: String,
     var name: String,
-    var mode: String, // "WHITELIST" or "BLACKLIST"
+    var mode: String, // "WHITELIST", "BLACKLIST", or "CREATOR"
     var dailyLimitMinutes: Int, // 0 = Unlimited
     var channels: MutableList<String>
 ) {
@@ -29,6 +29,7 @@ data class EnvironmentProfile(
     companion object {
         const val MODE_WHITELIST = "WHITELIST"
         const val MODE_BLACKLIST = "BLACKLIST"
+        const val MODE_CREATOR = "CREATOR"
 
         fun fromJson(obj: JSONObject): EnvironmentProfile {
             val chList = mutableListOf<String>()
@@ -58,6 +59,8 @@ class EnvironmentManager(context: Context) {
         private const val KEY_ACTIVE_ID = "active_profile_id"
         private const val KEY_USAGE_DATE = "usage_date"
         private const val KEY_USAGE_MAP = "usage_seconds_map"
+        private const val KEY_USE_API_KEY = "use_gemini_api_key"
+        private const val KEY_GEMINI_API_KEY = "gemini_api_key_value"
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -75,6 +78,18 @@ class EnvironmentManager(context: Context) {
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
                 list.add(EnvironmentProfile.fromJson(obj))
+            }
+            if (list.none { it.id == "creator" }) {
+                list.add(
+                    EnvironmentProfile(
+                        id = "creator",
+                        name = "Creator",
+                        mode = EnvironmentProfile.MODE_CREATOR,
+                        dailyLimitMinutes = 0,
+                        channels = mutableListOf()
+                    )
+                )
+                saveProfiles(list)
             }
             if (list.isEmpty()) {
                 val defaults = createDefaultProfiles()
@@ -96,14 +111,21 @@ class EnvironmentManager(context: Context) {
                 id = "study",
                 name = "Study",
                 mode = EnvironmentProfile.MODE_WHITELIST,
-                dailyLimitMinutes = 0, // Unlimited
+                dailyLimitMinutes = 0,
                 channels = mutableListOf()
             ),
             EnvironmentProfile(
                 id = "relax",
                 name = "Relax",
                 mode = EnvironmentProfile.MODE_BLACKLIST,
-                dailyLimitMinutes = 45, // 45 min/day default
+                dailyLimitMinutes = 45,
+                channels = mutableListOf()
+            ),
+            EnvironmentProfile(
+                id = "creator",
+                name = "Creator",
+                mode = EnvironmentProfile.MODE_CREATOR,
+                dailyLimitMinutes = 0,
                 channels = mutableListOf()
             )
         )
@@ -159,6 +181,17 @@ class EnvironmentManager(context: Context) {
         val profile = getActiveProfile()
         profile.channels.removeAll { it.equals(channelRaw, ignoreCase = true) }
         updateProfile(profile)
+    }
+
+    fun isUseApiKeyEnabled(): Boolean = prefs.getBoolean(KEY_USE_API_KEY, false)
+
+    fun getGeminiApiKey(): String = prefs.getString(KEY_GEMINI_API_KEY, "") ?: ""
+
+    fun saveGeminiSettings(useApiKey: Boolean, apiKey: String) {
+        prefs.edit()
+            .putBoolean(KEY_USE_API_KEY, useApiKey)
+            .putString(KEY_GEMINI_API_KEY, apiKey.trim())
+            .apply()
     }
 
     private fun todayKey(): String {

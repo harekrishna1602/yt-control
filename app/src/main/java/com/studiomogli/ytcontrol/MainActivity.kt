@@ -3,6 +3,8 @@ package com.studiomogli.ytcontrol
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -23,10 +25,12 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -36,7 +40,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -45,6 +51,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val YT_HOME_URL = "https://m.youtube.com"
+        private const val YT_STUDIO_URL = "https://studio.youtube.com"
+        private const val GEMINI_APP_URL = "https://gemini.google.com/app"
         private const val STUDIO_MOGLI_REFER_URL = "https://studiomogli.com/refer-and-earn"
         private const val STUDIO_MOGLI_HOME_URL = "https://studiomogli.com"
         private const val GITHUB_LATEST_RELEASE_API =
@@ -56,7 +64,8 @@ class MainActivity : AppCompatActivity() {
         private val DOCUMENT_START_ORIGINS = setOf(
             "https://m.youtube.com",
             "https://www.youtube.com",
-            "https://youtube.com"
+            "https://youtube.com",
+            "https://studio.youtube.com"
         )
 
         private val AUTH_HOSTS = listOf(
@@ -68,7 +77,9 @@ class MainActivity : AppCompatActivity() {
         private val ALLOWED_HOST_SUFFIXES = listOf(
             "m.youtube.com",
             "youtube.com",
+            "studio.youtube.com",
             "youtu.be",
+            "gemini.google.com",
             "consent.google.com",
             "consent.youtube.com",
             "gds.google.com",
@@ -90,6 +101,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSwitchFromLock: Button
     private lateinit var whitelistBar: LinearLayout
     private lateinit var whitelistChipsContainer: LinearLayout
+
+    // Creator Mode UI
+    private lateinit var creatorBar: LinearLayout
+    private lateinit var geminiDrawer: LinearLayout
+    private lateinit var txtGeminiDrawerTitle: TextView
+    private lateinit var geminiWebView: WebView
+    private lateinit var geminiApiResultScroll: ScrollView
+    private lateinit var txtGeminiApiResult: TextView
+    private lateinit var btnPastePrompt: TextView
+    private lateinit var btnCopyApiResult: TextView
+    private lateinit var btnCloseGeminiDrawer: TextView
+
+    private var pendingGeminiPrompt: String = ""
+    private var geminiWebLoaded: Boolean = false
 
     private var updateDownloadUrl: String? = null
     private var serviceStarted = false
@@ -119,7 +144,7 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         CookieManager.getInstance().flush()
         if (result.resultCode == Activity.RESULT_OK && ::webView.isInitialized) {
-            webView.loadUrl(YT_HOME_URL)
+            webView.reload()
         }
     }
 
@@ -142,8 +167,20 @@ class MainActivity : AppCompatActivity() {
         whitelistBar = findViewById(R.id.whitelistBar)
         whitelistChipsContainer = findViewById(R.id.whitelistChipsContainer)
 
+        creatorBar = findViewById(R.id.creatorBar)
+        geminiDrawer = findViewById(R.id.geminiDrawer)
+        txtGeminiDrawerTitle = findViewById(R.id.txtGeminiDrawerTitle)
+        geminiWebView = findViewById(R.id.geminiWebView)
+        geminiApiResultScroll = findViewById(R.id.geminiApiResultScroll)
+        txtGeminiApiResult = findViewById(R.id.txtGeminiApiResult)
+        btnPastePrompt = findViewById(R.id.btnPastePrompt)
+        btnCopyApiResult = findViewById(R.id.btnCopyApiResult)
+        btnCloseGeminiDrawer = findViewById(R.id.btnCloseGeminiDrawer)
+
         setupTopBar()
+        setupCreatorBarAndDrawer()
         configureWebView()
+        configureGeminiWebView()
         registerBridgeHandlers()
         registerBackNavigation()
         refreshEnvironmentUi()
@@ -158,7 +195,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupTopBar() {
         val btnCredits: TextView = findViewById(R.id.btnStudioMogliCredits)
 
-        // 1-click toggle between Environments (Study <-> Relax <-> Custom)
         btnEnvSwitch.setOnClickListener {
             val next = envManager.toggleNextProfile()
             refreshEnvironmentUi()
@@ -167,12 +203,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnEnvSettings.setOnClickListener {
-            showEnvironmentManagerDialog()
+            val active = envManager.getActiveProfile()
+            if (active.mode == EnvironmentProfile.MODE_CREATOR) {
+                showGeminiSettingsDialog()
+            } else {
+                showEnvironmentManagerDialog()
+            }
         }
 
-        btnCredits.setOnClickListener {
-            showStudioMogliCreditsDialog()
-        }
+        btnCredits.setOnClickListener { showStudioMogliCreditsDialog() }
 
         btnUpdateApp.setOnClickListener {
             val url = updateDownloadUrl
@@ -187,10 +226,244 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupCreatorBarAndDrawer() {
+        findViewById<TextView>(R.id.btnCreatorStudio).setOnClickListener {
+            val currentUrl = webView.url ?: ""
+            if (currentUrl.contains("studio.youtube.com")) {
+                webView.settings.userAgentString = buildCleanMobileUa()
+                webView.loadUrl(YT_HOME_URL)
+                Toast.makeText(this, "Opened YouTube Feed (Outlier Radar Active)", Toast.LENGTH_SHORT).show()
+            } else {
+                webView.settings.userAgentString = buildDesktopChromeUa()
+                webView.loadUrl(YT_STUDIO_URL)
+                Toast.makeText(this, "Opened YouTube Studio Dashboard", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<TextView>(R.id.btnCreatorRadar).setOnClickListener {
+            triggerCreatorAiTool("CHANNEL_RADAR")
+        }
+
+        findViewById<TextView>(R.id.btnCreatorComments).setOnClickListener {
+            triggerCreatorAiTool("MINE_COMMENTS")
+        }
+
+        findViewById<TextView>(R.id.btnCreatorHooks).setOnClickListener {
+            triggerCreatorAiTool("HOOKS_AUDIT")
+        }
+
+        findViewById<TextView>(R.id.btnCreatorAiSettings).setOnClickListener {
+            showGeminiSettingsDialog()
+        }
+
+        btnCloseGeminiDrawer.setOnClickListener {
+            geminiDrawer.visibility = View.GONE
+        }
+
+        btnPastePrompt.setOnClickListener {
+            if (pendingGeminiPrompt.isNotBlank()) {
+                copyToClipboard("YT Control Prompt", pendingGeminiPrompt)
+                injectPromptIntoGeminiWebView(pendingGeminiPrompt)
+                Toast.makeText(this, "Prompt sent & copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnCopyApiResult.setOnClickListener {
+            copyToClipboard("YT Control AI Result", txtGeminiApiResult.text.toString())
+            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun triggerCreatorAiTool(action: String) {
+        webView.evaluateJavascript("window.__ytcScrapeContext ? window.__ytcScrapeContext() : '{}'") { raw ->
+            val unescaped = try {
+                if (raw != null && raw.startsWith("\"") && raw.endsWith("\"")) {
+                    JSONObject("{\"v\":$raw}").getString("v")
+                } else {
+                    raw ?: "{}"
+                }
+            } catch (e: Exception) {
+                "{}"
+            }
+            launchGeminiWithContext(action, unescaped)
+        }
+    }
+
+    private fun launchGeminiWithContext(action: String, contextJson: String) {
+        val (title, prompt) = CreatorPromptBuilder.buildPrompt(action, contextJson)
+        pendingGeminiPrompt = prompt
+        copyToClipboard("YT Control Prompt", prompt)
+
+        txtGeminiDrawerTitle.text = title
+        geminiDrawer.visibility = View.VISIBLE
+
+        val useApi = envManager.isUseApiKeyEnabled()
+        val apiKey = envManager.getGeminiApiKey()
+
+        if (useApi && apiKey.isNotBlank()) {
+            geminiWebView.visibility = View.GONE
+            btnPastePrompt.visibility = View.GONE
+            geminiApiResultScroll.visibility = View.VISIBLE
+            btnCopyApiResult.visibility = View.VISIBLE
+            txtGeminiApiResult.text = "Analyzing with Gemini API..."
+            callGeminiRestApi(apiKey, prompt)
+        } else {
+            geminiApiResultScroll.visibility = View.GONE
+            btnCopyApiResult.visibility = View.GONE
+            geminiWebView.visibility = View.VISIBLE
+            btnPastePrompt.visibility = View.VISIBLE
+            if (!geminiWebLoaded) {
+                geminiWebLoaded = true
+                geminiWebView.loadUrl(GEMINI_APP_URL)
+            } else {
+                injectPromptIntoGeminiWebView(prompt)
+            }
+        }
+    }
+
+    private fun callGeminiRestApi(apiKey: String, prompt: String) {
+        Thread {
+            var conn: HttpURLConnection? = null
+            try {
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
+                conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+
+                val bodyJson = JSONObject().apply {
+                    put("contents", JSONArray().put(
+                        JSONObject().put("parts", JSONArray().put(
+                            JSONObject().put("text", prompt)
+                        ))
+                    ))
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(bodyJson.toString()) }
+
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val respText = stream.bufferedReader().use { it.readText() }
+
+                val output = if (code in 200..299) {
+                    val json = JSONObject(respText)
+                    json.optJSONArray("candidates")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("content")
+                        ?.optJSONArray("parts")
+                        ?.optJSONObject(0)
+                        ?.optString("text", "No response returned.")
+                        ?: "No response returned."
+                } else {
+                    "Gemini API Error ($code):\n$respText"
+                }
+
+                runOnUiThread { txtGeminiApiResult.text = output }
+            } catch (e: Exception) {
+                runOnUiThread { txtGeminiApiResult.text = "Network error: ${e.message}" }
+            } finally {
+                conn?.disconnect()
+            }
+        }.start()
+    }
+
+    private fun injectPromptIntoGeminiWebView(prompt: String) {
+        val escapedPrompt = JSONObject.quote(prompt)
+        val js = "(function(){" +
+            "var p=" + escapedPrompt + ";" +
+            "var box=document.querySelector('rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"][role=\"textbox\"], textarea');" +
+            "if(!box)return;" +
+            "box.focus();" +
+            "if(box.tagName==='TEXTAREA'){box.value=p;}else{box.innerText=p;}" +
+            "box.dispatchEvent(new Event('input',{bubbles:true}));" +
+            "setTimeout(function(){" +
+            "var sendBtn=document.querySelector('button[aria-label*=\"Send\"], button.send-button, button[data-test-id=\"send-button\"]');" +
+            "if(sendBtn&&!sendBtn.disabled)sendBtn.click();" +
+            "},400);" +
+            "})();"
+        geminiWebView.evaluateJavascript(js, null)
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun configureGeminiWebView() {
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(geminiWebView, true)
+
+        geminiWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            userAgentString = buildCleanMobileUa()
+        }
+
+        geminiWebView.webChromeClient = WebChromeClient()
+        geminiWebView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val uri = request?.url ?: return false
+                val host = uri.host?.lowercase() ?: return false
+                if (AUTH_HOSTS.any { host == it || host.endsWith(".$it") }) {
+                    launchIsolatedGoogleSignIn(uri.toString())
+                    return true
+                }
+                return false
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                CookieManager.getInstance().flush()
+                if (url != null && url.contains("gemini.google.com") && pendingGeminiPrompt.isNotBlank()) {
+                    view?.postDelayed({ injectPromptIntoGeminiWebView(pendingGeminiPrompt) }, 1200L)
+                }
+            }
+        }
+    }
+
+    private fun showGeminiSettingsDialog() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_gemini_settings, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val chkUseApi: CheckBox = dialogView.findViewById(R.id.chkUseApiKey)
+        val edtApiKey: EditText = dialogView.findViewById(R.id.edtGeminiApiKey)
+        val btnSave: Button = dialogView.findViewById(R.id.btnSaveGeminiSettings)
+        val btnClose: TextView = dialogView.findViewById(R.id.btnCloseGeminiSettings)
+
+        chkUseApi.isChecked = envManager.isUseApiKeyEnabled()
+        edtApiKey.setText(envManager.getGeminiApiKey())
+
+        btnSave.setOnClickListener {
+            envManager.saveGeminiSettings(chkUseApi.isChecked, edtApiKey.text.toString())
+            dialog.dismiss()
+            val modeLabel = if (chkUseApi.isChecked) "Gemini API Key" else "Logged-in Gemini Account"
+            Toast.makeText(this, "AI Mode: $modeLabel", Toast.LENGTH_SHORT).show()
+        }
+        btnClose.setOnClickListener { dialog.dismiss() }
+        dialog.show()
+    }
+
+    private fun copyToClipboard(label: String, text: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+    }
+
     private fun refreshEnvironmentUi() {
         val active = envManager.getActiveProfile()
-        val modeTag = if (active.mode == EnvironmentProfile.MODE_WHITELIST) "Only" else "Block"
+        val modeTag = when (active.mode) {
+            EnvironmentProfile.MODE_WHITELIST -> "Only"
+            EnvironmentProfile.MODE_CREATOR -> "Pro"
+            else -> "Block"
+        }
         btnEnvSwitch.text = "${active.name} ($modeTag)"
+        btnEnvSettings.text = if (active.mode == EnvironmentProfile.MODE_CREATOR) "AI Key" else "Edit"
+
+        creatorBar.visibility = if (active.mode == EnvironmentProfile.MODE_CREATOR) View.VISIBLE else View.GONE
         updateTimerAndLockUi()
         renderWhitelistQuickBar(active)
     }
@@ -212,9 +485,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     lp.marginEnd = 12
                     layoutParams = lp
-                    setOnClickListener {
-                        openChannelInWebView(ch)
-                    }
+                    setOnClickListener { openChannelInWebView(ch) }
                 }
                 whitelistChipsContainer.addView(chip)
             }
@@ -268,9 +539,7 @@ class MainActivity : AppCompatActivity() {
     private fun showEnvironmentManagerDialog() {
         val active = envManager.getActiveProfile()
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_environment_settings, null)
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         val txtTitle: TextView = dialogView.findViewById(R.id.txtEnvDialogTitle)
@@ -373,7 +642,7 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pkgInfo.longVersionCode
             else @Suppress("DEPRECATION") pkgInfo.versionCode.toLong()
         } catch (e: Exception) {
-            1L
+            2L
         }
     }
 
@@ -385,9 +654,9 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(packageName, 0)
             }
-            pkgInfo.versionName ?: "1.0.0"
+            pkgInfo.versionName ?: "1.1.0"
         } catch (e: Exception) {
-            "1.0.0"
+            "1.1.0"
         }
     }
 
@@ -403,10 +672,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTrustWelcomeDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_trust_welcome, null)
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .setCancelable(true)
-            .create()
+        val dialog = AlertDialog.Builder(this).setView(dialogView).setCancelable(true).create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialogView.findViewById<Button>(R.id.btnTrustGotIt).setOnClickListener { dialog.dismiss() }
         dialog.show()
@@ -414,9 +680,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showStudioMogliCreditsDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_studio_mogli, null)
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         dialogView.findViewById<Button>(R.id.btnReferAndEarn).setOnClickListener {
@@ -431,9 +695,7 @@ class MainActivity : AppCompatActivity() {
             openExternalBrowser(STUDIO_MOGLI_HOME_URL)
             dialog.dismiss()
         }
-        dialogView.findViewById<TextView>(R.id.btnCloseCredits).setOnClickListener {
-            dialog.dismiss()
-        }
+        dialogView.findViewById<TextView>(R.id.btnCloseCredits).setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
 
@@ -515,6 +777,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun buildCleanMobileUa(): String {
+        val realDefaultUa = WebSettings.getDefaultUserAgent(this)
+        return realDefaultUa
+            .replace("; wv", "")
+            .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun buildDesktopChromeUa(): String {
+        val defaultUa = WebSettings.getDefaultUserAgent(this)
+        val chromeMatch = Regex("Chrome/[0-9.]+").find(defaultUa)?.value ?: "Chrome/134.0.0.0"
+        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $chromeMatch Safari/537.36"
+    }
+
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
@@ -530,13 +807,6 @@ class MainActivity : AppCompatActivity() {
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-        val realDefaultUa = WebSettings.getDefaultUserAgent(this)
-        val cleanMobileUa = realDefaultUa
-            .replace("; wv", "")
-            .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -549,7 +819,7 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             setSupportMultipleWindows(false)
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            userAgentString = cleanMobileUa
+            userAgentString = buildCleanMobileUa()
         }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -612,7 +882,11 @@ class MainActivity : AppCompatActivity() {
         val host = uri.host?.lowercase() ?: return true
         val path = uri.path?.lowercase() ?: ""
 
-        // Hard-block Shorts URLs
+        if (host == "i.ytimg.com") {
+            openExternalBrowser(uri.toString())
+            return true
+        }
+
         if (path.startsWith("/shorts")) {
             Toast.makeText(this, "Shorts blocked by YT Control", Toast.LENGTH_SHORT).show()
             return true
@@ -654,8 +928,13 @@ class MainActivity : AppCompatActivity() {
     private fun registerBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack()
-                else moveTaskToBack(true)
+                if (geminiDrawer.visibility == View.VISIBLE) {
+                    geminiDrawer.visibility = View.GONE
+                } else if (webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    moveTaskToBack(true)
+                }
             }
         })
     }
@@ -695,6 +974,7 @@ class MainActivity : AppCompatActivity() {
         if (isExiting) {
             stopService(Intent(this, PlaybackService::class.java))
             webView.destroy()
+            geminiWebView.destroy()
         }
         super.onDestroy()
     }
@@ -704,6 +984,13 @@ class MainActivity : AppCompatActivity() {
         fun onPlaybackStateChanged(isPlaying: Boolean, title: String, artist: String) {
             runOnUiThread {
                 if (!isExiting) updatePlaybackService(isPlaying, title, artist)
+            }
+        }
+
+        @JavascriptInterface
+        fun onCreatorActionRequested(action: String, contextJson: String) {
+            runOnUiThread {
+                if (!isExiting) launchGeminiWithContext(action, contextJson)
             }
         }
     }

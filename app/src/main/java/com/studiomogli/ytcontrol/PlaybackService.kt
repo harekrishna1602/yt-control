@@ -67,9 +67,7 @@ class PlaybackService : Service() {
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "YTControl::AudioWakeLock"
-        ).apply {
-            setReferenceCounted(false)
-        }
+        ).apply { setReferenceCounted(false) }
     }
 
     private fun initMediaSession() {
@@ -111,11 +109,8 @@ class PlaybackService : Service() {
 
     private fun syncWakeLock() {
         val lock = wakeLock ?: return
-        if (isPlaying) {
-            if (!lock.isHeld) lock.acquire(WAKE_LOCK_TIMEOUT_MS)
-        } else {
-            if (lock.isHeld) lock.release()
-        }
+        if (isPlaying) { if (!lock.isHeld) lock.acquire(WAKE_LOCK_TIMEOUT_MS) }
+        else { if (lock.isHeld) lock.release() }
     }
 
     private fun updateMediaSessionState() {

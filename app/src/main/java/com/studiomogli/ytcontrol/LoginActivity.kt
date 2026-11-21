@@ -74,7 +74,7 @@ class LoginActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val uri = request?.url ?: return false
-                if (isReturnToYouTube(uri)) {
+                if (isReturnToAppHost(uri)) {
                     completeLogin()
                     return true
                 }
@@ -87,7 +87,7 @@ class LoginActivity : AppCompatActivity() {
                 CookieManager.getInstance().flush()
                 if (url != null) {
                     val uri = Uri.parse(url)
-                    if (isReturnToYouTube(uri)) {
+                    if (isReturnToAppHost(uri)) {
                         completeLogin()
                     }
                 }
@@ -110,10 +110,10 @@ class LoginActivity : AppCompatActivity() {
         loginWebView.loadUrl(targetUrl)
     }
 
-    private fun isReturnToYouTube(uri: Uri): Boolean {
+    private fun isReturnToAppHost(uri: Uri): Boolean {
         val host = uri.host?.lowercase() ?: return false
         val path = uri.path?.lowercase() ?: ""
-        return (host == "m.youtube.com" || host == "www.youtube.com") && !path.contains("signin")
+        return (host == "m.youtube.com" || host == "www.youtube.com" || host == "studio.youtube.com" || host == "gemini.google.com") && !path.contains("signin")
     }
 
     private fun completeLogin() {

@@ -9,60 +9,30 @@ object JsScripts {
             if (window.__ytcDocStartInstalled) return;
             window.__ytcDocStartInstalled = true;
 
-            // --- 1. Page Visibility API Spoof (Background & screen-off playback) ---
             try {
-                Object.defineProperty(document, 'hidden', {
-                    get: function() { return false; },
-                    configurable: true
-                });
-                Object.defineProperty(document, 'webkitHidden', {
-                    get: function() { return false; },
-                    configurable: true
-                });
-                Object.defineProperty(document, 'visibilityState', {
-                    get: function() { return 'visible'; },
-                    configurable: true
-                });
-                Object.defineProperty(document, 'webkitVisibilityState', {
-                    get: function() { return 'visible'; },
-                    configurable: true
-                });
+                Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(document, 'webkitHidden', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
             } catch (e) {}
 
             var blockedEvents = ['visibilitychange', 'webkitvisibilitychange', 'pagehide', 'freeze'];
             blockedEvents.forEach(function(evtName) {
-                window.addEventListener(evtName, function(e) {
-                    e.stopImmediatePropagation();
-                }, true);
-                document.addEventListener(evtName, function(e) {
-                    e.stopImmediatePropagation();
-                }, true);
+                window.addEventListener(evtName, function(e) { e.stopImmediatePropagation(); }, true);
+                document.addEventListener(evtName, function(e) { e.stopImmediatePropagation(); }, true);
             });
 
-            // --- 2. Layer 2 Ad Blocker: JSON Response Pruning ---
-            var AD_KEYS = [
-                'adPlacements',
-                'playerAds',
-                'adSlots',
-                'adBreakHeartbeatParams'
-            ];
-
+            var AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
             function stripAds(obj) {
                 if (!obj || typeof obj !== 'object') return obj;
                 try {
                     for (var i = 0; i < AD_KEYS.length; i++) {
-                        if (AD_KEYS[i] in obj) {
-                            delete obj[AD_KEYS[i]];
-                        }
+                        if (AD_KEYS[i] in obj) delete obj[AD_KEYS[i]];
                     }
-                    if (obj.playerResponse && typeof obj.playerResponse === 'object') {
-                        stripAds(obj.playerResponse);
-                    }
+                    if (obj.playerResponse && typeof obj.playerResponse === 'object') stripAds(obj.playerResponse);
                     if (Array.isArray(obj)) {
                         for (var j = 0; j < obj.length; j++) {
-                            if (obj[j] && typeof obj[j] === 'object' && obj[j].playerResponse) {
-                                stripAds(obj[j].playerResponse);
-                            }
+                            if (obj[j] && typeof obj[j] === 'object' && obj[j].playerResponse) stripAds(obj[j].playerResponse);
                         }
                     }
                 } catch (e) {}
@@ -71,14 +41,11 @@ object JsScripts {
 
             function isTargetApiUrl(url) {
                 if (!url || typeof url !== 'string') return false;
-                return url.indexOf('/youtubei/v1/player') !== -1 ||
-                       url.indexOf('/youtubei/v1/next') !== -1;
+                return url.indexOf('/youtubei/v1/player') !== -1 || url.indexOf('/youtubei/v1/next') !== -1;
             }
 
             try {
-                var initialPlayerResp = window.ytInitialPlayerResponse
-                    ? stripAds(window.ytInitialPlayerResponse)
-                    : undefined;
+                var initialPlayerResp = window.ytInitialPlayerResponse ? stripAds(window.ytInitialPlayerResponse) : undefined;
                 Object.defineProperty(window, 'ytInitialPlayerResponse', {
                     configurable: true,
                     get: function() { return initialPlayerResp; },
@@ -90,19 +57,12 @@ object JsScripts {
                 var origFetch = window.fetch;
                 window.fetch = function(input, init) {
                     var url = '';
-                    try {
-                        url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-                    } catch (e) {}
-
+                    try { url = typeof input === 'string' ? input : (input && input.url ? input.url : ''); } catch (e) {}
                     var fetchPromise = origFetch.apply(this, arguments);
-                    if (!isTargetApiUrl(url)) {
-                        return fetchPromise;
-                    }
-
+                    if (!isTargetApiUrl(url)) return fetchPromise;
                     return fetchPromise.then(function(response) {
                         if (!response || !response.ok) return response;
-                        var cloned = response.clone();
-                        return cloned.json().then(function(data) {
+                        return response.clone().json().then(function(data) {
                             stripAds(data);
                             var headers = new Headers(response.headers);
                             headers.delete('content-length');
@@ -111,9 +71,7 @@ object JsScripts {
                                 statusText: response.statusText,
                                 headers: headers
                             });
-                        }).catch(function() {
-                            return response;
-                        });
+                        }).catch(function() { return response; });
                     });
                 };
             }
@@ -122,12 +80,10 @@ object JsScripts {
                 var origOpen = XMLHttpRequest.prototype.open;
                 var responseTextDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
                 var responseDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'response');
-
                 XMLHttpRequest.prototype.open = function(method, url) {
                     this.__ytcUrl = typeof url === 'string' ? url : '';
                     return origOpen.apply(this, arguments);
                 };
-
                 if (responseTextDesc && responseTextDesc.get) {
                     Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
                         configurable: true,
@@ -144,7 +100,6 @@ object JsScripts {
                         }
                     });
                 }
-
                 if (responseDesc && responseDesc.get) {
                     Object.defineProperty(XMLHttpRequest.prototype, 'response', {
                         configurable: true,
@@ -178,7 +133,6 @@ object JsScripts {
 
             window.__ytcConfig = window.__ytcConfig || { mode: 'BLACKLIST', channels: [] };
 
-            // --- 1. Cosmetic CSS: Block Ads + Block All Shorts ---
             function injectCss() {
                 try {
                     if (document.getElementById('ytc-control-css')) return;
@@ -209,8 +163,50 @@ object JsScripts {
                         '    min-height: 0 !important;',
                         '    pointer-events: none !important;',
                         '}',
-                        '.ytc-hidden-card {',
-                        '    display: none !important;',
+                        '.ytc-hidden-card { display: none !important; }',
+                        '.ytc-outlier-badge {',
+                        '    display: inline-block;',
+                        '    background: #10B981;',
+                        '    color: #FFFFFF;',
+                        '    font-size: 10px;',
+                        '    font-weight: 800;',
+                        '    padding: 2px 6px;',
+                        '    border-radius: 4px;',
+                        '    margin: 4px 0 4px 8px;',
+                        '    letter-spacing: 0.4px;',
+                        '}',
+                        '.ytc-xray-bar {',
+                        '    display: flex;',
+                        '    align-items: center;',
+                        '    gap: 8px;',
+                        '    background: #181818;',
+                        '    border: 1px solid #2E2E2E;',
+                        '    border-radius: 8px;',
+                        '    padding: 8px 10px;',
+                        '    margin: 8px 12px;',
+                        '    font-size: 11px;',
+                        '    color: #E5E5E5;',
+                        '    flex-wrap: wrap;',
+                        '}',
+                        '.ytc-xray-btn {',
+                        '    background: #FF0033;',
+                        '    color: #FFFFFF;',
+                        '    border: none;',
+                        '    border-radius: 6px;',
+                        '    padding: 5px 10px;',
+                        '    font-size: 11px;',
+                        '    font-weight: 700;',
+                        '    text-decoration: none;',
+                        '}',
+                        '.ytc-xray-btn-dark {',
+                        '    background: #2A2A2A;',
+                        '    color: #FFFFFF;',
+                        '    border: 1px solid #444;',
+                        '    border-radius: 6px;',
+                        '    padding: 5px 10px;',
+                        '    font-size: 11px;',
+                        '    font-weight: 600;',
+                        '    text-decoration: none;',
                         '}'
                     ].join('\n');
                     (document.head || document.documentElement).appendChild(style);
@@ -218,9 +214,9 @@ object JsScripts {
             }
             injectCss();
 
-            // --- 2. Shorts Navigation Guard & Tab Remover ---
             function enforceShortsBlock() {
                 try {
+                    if (location.hostname.indexOf('studio.youtube.com') !== -1) return;
                     if (location.pathname && location.pathname.indexOf('/shorts') === 0) {
                         location.replace('https://m.youtube.com/');
                         return;
@@ -235,7 +231,137 @@ object JsScripts {
                 } catch (e) {}
             }
 
-            // --- 3. Channel Whitelist / Blacklist Filter ---
+            function parseViewCount(text) {
+                if (!text) return 0;
+                var m = text.toLowerCase().match(/([0-9]+(?:\.[0-9]+)?)\s*([kmb])?\s*views/);
+                if (!m) return 0;
+                var num = parseFloat(m[1]);
+                var suffix = m[2] || '';
+                if (suffix === 'k') num *= 1000;
+                else if (suffix === 'm') num *= 1000000;
+                else if (suffix === 'b') num *= 1000000000;
+                return isNaN(num) ? 0 : num;
+            }
+
+            function runOutlierDetector() {
+                try {
+                    var cfg = window.__ytcConfig || { mode: 'BLACKLIST' };
+                    var existing = document.querySelectorAll('.ytc-outlier-badge');
+                    if (cfg.mode !== 'CREATOR') {
+                        for (var r = 0; r < existing.length; r++) existing[r].remove();
+                        return;
+                    }
+                    if (location.hostname.indexOf('studio.youtube.com') !== -1) return;
+
+                    var cards = document.querySelectorAll('ytm-rich-item-renderer, ytm-video-with-context-renderer, ytm-compact-video-renderer');
+                    var counts = [];
+                    var cardViews = [];
+                    for (var i = 0; i < cards.length; i++) {
+                        var v = parseViewCount(cards[i].textContent || '');
+                        cardViews.push(v);
+                        if (v > 0) counts.push(v);
+                    }
+                    if (counts.length < 3) return;
+                    counts.sort(function(a, b) { return a - b; });
+                    var median = counts[Math.floor(counts.length / 2)];
+                    if (median <= 0) return;
+
+                    for (var j = 0; j < cards.length; j++) {
+                        var card = cards[j];
+                        var vCount = cardViews[j];
+                        var ratio = vCount / median;
+                        var badge = card.querySelector('.ytc-outlier-badge');
+                        if (ratio >= 2.5) {
+                            var label = ratio.toFixed(1) + 'x OUTLIER';
+                            if (!badge) {
+                                badge = document.createElement('span');
+                                badge.className = 'ytc-outlier-badge';
+                                var target = card.querySelector('.details, ytm-media-item, h3, h4') || card;
+                                target.insertBefore(badge, target.firstChild);
+                            }
+                            if (badge.textContent !== label) badge.textContent = label;
+                        } else if (badge) {
+                            badge.remove();
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            function runCompetitorXRay() {
+                try {
+                    var cfg = window.__ytcConfig || { mode: 'BLACKLIST' };
+                    var oldBar = document.getElementById('ytc-xray-bar');
+                    if (cfg.mode !== 'CREATOR' || location.pathname !== '/watch') {
+                        if (oldBar) oldBar.remove();
+                        return;
+                    }
+                    var params = new URLSearchParams(location.search);
+                    var vid = params.get('v');
+                    if (!vid) return;
+                    if (oldBar && oldBar.getAttribute('data-vid') === vid) return;
+                    if (oldBar) oldBar.remove();
+
+                    var anchor = document.querySelector('ytm-slim-video-metadata-section-renderer, .watch-below-the-player');
+                    if (!anchor) return;
+
+                    var bar = document.createElement('div');
+                    bar.id = 'ytc-xray-bar';
+                    bar.className = 'ytc-xray-bar';
+                    bar.setAttribute('data-vid', vid);
+
+                    var label = document.createElement('span');
+                    label.style.fontWeight = '700';
+                    label.textContent = 'CREATOR X-RAY';
+                    bar.appendChild(label);
+
+                    var thumbLink = document.createElement('a');
+                    thumbLink.className = 'ytc-xray-btn-dark';
+                    thumbLink.textContent = 'HD Thumb';
+                    thumbLink.href = 'https://i.ytimg.com/vi/' + vid + '/maxresdefault.jpg';
+                    thumbLink.target = '_blank';
+                    bar.appendChild(thumbLink);
+
+                    var adaptBtn = document.createElement('button');
+                    adaptBtn.className = 'ytc-xray-btn';
+                    adaptBtn.textContent = 'Adapt This (AI)';
+                    adaptBtn.onclick = function() {
+                        if (window.AndroidBridge && window.AndroidBridge.onCreatorActionRequested) {
+                            window.AndroidBridge.onCreatorActionRequested('ADAPT_VIDEO', window.__ytcScrapeContext());
+                        }
+                    };
+                    bar.appendChild(adaptBtn);
+
+                    anchor.parentNode.insertBefore(bar, anchor);
+                } catch (e) {}
+            }
+
+            window.__ytcScrapeContext = function() {
+                try {
+                    var title = (document.title || '').replace(' - YouTube', '').trim();
+                    var url = location.href || '';
+                    var snippetParts = [];
+                    var cards = document.querySelectorAll('ytm-rich-item-renderer, ytm-video-with-context-renderer, ytcp-video-row, h1, h2, h3');
+                    for (var i = 0; i < Math.min(cards.length, 20); i++) {
+                        var t = (cards[i].innerText || '').replace(/\s+/g, ' ').trim();
+                        if (t.length > 12) snippetParts.push(t.slice(0, 160));
+                    }
+                    var commentParts = [];
+                    var commentNodes = document.querySelectorAll('ytm-comment-renderer .comment-text, .comment-content, #content-text');
+                    for (var j = 0; j < Math.min(commentNodes.length, 30); j++) {
+                        var ct = (commentNodes[j].innerText || '').replace(/\s+/g, ' ').trim();
+                        if (ct.length > 5) commentParts.push('- ' + ct.slice(0, 180));
+                    }
+                    return JSON.stringify({
+                        title: title,
+                        url: url,
+                        snippets: snippetParts.join('\n'),
+                        comments: commentParts.join('\n')
+                    });
+                } catch (e) {
+                    return JSON.stringify({ title: document.title || '', url: location.href || '', snippets: '', comments: '' });
+                }
+            };
+
             function normalizeChannel(s) {
                 return (s || '').toLowerCase().replace(/^@/, '').trim();
             }
@@ -257,11 +383,11 @@ object JsScripts {
 
             function applyChannelFilter() {
                 try {
+                    if (location.hostname.indexOf('studio.youtube.com') !== -1) return;
                     var cfg = window.__ytcConfig || { mode: 'BLACKLIST', channels: [] };
                     var mode = cfg.mode || 'BLACKLIST';
                     var list = cfg.channels || [];
 
-                    // On a specific channel page, don't hide its own videos if allowed
                     var path = (location.pathname || '').toLowerCase();
                     var isOnChannelPage = path.indexOf('/@') === 0 || path.indexOf('/channel/') === 0 || path.indexOf('/c/') === 0;
 
@@ -272,21 +398,17 @@ object JsScripts {
                     for (var i = 0; i < cards.length; i++) {
                         var card = cards[i];
                         var links = card.querySelectorAll('a[href]');
-                        // Also hide any card linking to /shorts/
                         var isShort = false;
                         for (var k = 0; k < links.length; k++) {
                             var h = (links[k].getAttribute('href') || '').toLowerCase();
-                            if (h.indexOf('/shorts/') !== -1) {
-                                isShort = true;
-                                break;
-                            }
+                            if (h.indexOf('/shorts/') !== -1) { isShort = true; break; }
                         }
                         if (isShort) {
                             card.classList.add('ytc-hidden-card');
                             continue;
                         }
 
-                        if (list.length === 0) {
+                        if (mode === 'CREATOR' || list.length === 0) {
                             card.classList.remove('ytc-hidden-card');
                             continue;
                         }
@@ -300,14 +422,10 @@ object JsScripts {
                             else card.classList.remove('ytc-hidden-card');
                         } else if (mode === 'WHITELIST') {
                             if (isOnChannelPage) {
-                                // Check if current channel URL is in whitelist
                                 var pageAllowed = false;
                                 for (var m = 0; m < list.length; m++) {
                                     var t = normalizeChannel(list[m]);
-                                    if (t && path.indexOf(t) !== -1) {
-                                        pageAllowed = true;
-                                        break;
-                                    }
+                                    if (t && path.indexOf(t) !== -1) { pageAllowed = true; break; }
                                 }
                                 if (pageAllowed) {
                                     card.classList.remove('ytc-hidden-card');
@@ -325,22 +443,19 @@ object JsScripts {
                 try {
                     window.__ytcConfig = typeof cfgJson === 'string' ? JSON.parse(cfgJson) : cfgJson;
                     applyChannelFilter();
+                    runOutlierDetector();
+                    runCompetitorXRay();
                 } catch (e) {}
             };
 
-            // --- 4. Layer 3 Fallback Ad Skipper ---
             var adMuteActive = false;
             var wasMutedBeforeAd = false;
-
             function isAdPlaying() {
                 try {
                     var player = document.querySelector('.html5-video-player, #movie_player');
                     if (!player) return false;
-                    return player.classList.contains('ad-showing') ||
-                           player.classList.contains('ad-interrupting');
-                } catch (e) {
-                    return false;
-                }
+                    return player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+                } catch (e) { return false; }
             }
 
             function handleFallbackAd() {
@@ -348,22 +463,13 @@ object JsScripts {
                     var video = document.querySelector('video');
                     if (isAdPlaying()) {
                         if (video) {
-                            if (!adMuteActive) {
-                                wasMutedBeforeAd = !!video.muted;
-                                adMuteActive = true;
-                            }
+                            if (!adMuteActive) { wasMutedBeforeAd = !!video.muted; adMuteActive = true; }
                             video.muted = true;
                             if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.1) {
                                 video.currentTime = video.duration;
                             }
                         }
-                        var skipSelectors = [
-                            '.ytp-skip-ad-button',
-                            '.ytp-ad-skip-button',
-                            '.ytp-ad-skip-button-modern',
-                            '.ytp-ad-skip-button-slot button',
-                            '.ytp-ad-overlay-close-button'
-                        ];
+                        var skipSelectors = ['.ytp-skip-ad-button', '.ytp-ad-skip-button', '.ytp-ad-skip-button-modern', '.ytp-ad-skip-button-slot button', '.ytp-ad-overlay-close-button'];
                         for (var i = 0; i < skipSelectors.length; i++) {
                             var btn = document.querySelector(skipSelectors[i]);
                             if (btn && btn.offsetParent !== null) btn.click();
@@ -375,7 +481,6 @@ object JsScripts {
                 } catch (e) {}
             }
 
-            // --- 5. Observers & Loops ---
             function startObservers() {
                 try {
                     if (!document.body) return;
@@ -383,62 +488,47 @@ object JsScripts {
                         enforceShortsBlock();
                         handleFallbackAd();
                         applyChannelFilter();
+                        runOutlierDetector();
+                        runCompetitorXRay();
                     });
-                    observer.observe(document.body, {
-                        childList: true,
-                        subtree: true,
-                        attributes: true,
-                        attributeFilter: ['class']
-                    });
+                    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
                 } catch (e) {}
             }
 
-            if (document.body) {
-                startObservers();
-            } else {
-                document.addEventListener('DOMContentLoaded', function() {
-                    injectCss();
-                    startObservers();
-                });
-            }
+            if (document.body) startObservers();
+            else document.addEventListener('DOMContentLoaded', function() { injectCss(); startObservers(); });
 
             setInterval(function() {
                 enforceShortsBlock();
                 handleFallbackAd();
                 applyChannelFilter();
-            }, 600);
+                runOutlierDetector();
+                runCompetitorXRay();
+            }, 800);
 
-            // --- 6. Remote Control Bridge ---
             window.__ytcControl = function(action) {
                 try {
                     var video = document.querySelector('video');
                     if (!video) return;
                     if (action === 'play') video.play();
                     else if (action === 'pause') video.pause();
-                    else if (action === 'toggle') {
-                        if (video.paused) video.play();
-                        else video.pause();
-                    }
+                    else if (action === 'toggle') { if (video.paused) video.play(); else video.pause(); }
                 } catch (e) {}
             };
 
-            // --- 7. Sync Playback State to Android Foreground Service ---
             var lastState = '';
             function syncPlaybackState() {
                 try {
                     if (!window.AndroidBridge || !window.AndroidBridge.onPlaybackStateChanged) return;
                     if (isAdPlaying()) return;
-
                     var video = document.querySelector('video');
                     var isPlaying = !!(video && !video.paused && !video.ended && video.readyState > 1);
-
                     var title = (document.title || 'YT Control').replace(' - YouTube', '').trim();
                     var artist = 'YT Control';
                     if (navigator.mediaSession && navigator.mediaSession.metadata) {
                         if (navigator.mediaSession.metadata.title) title = navigator.mediaSession.metadata.title;
                         if (navigator.mediaSession.metadata.artist) artist = navigator.mediaSession.metadata.artist;
                     }
-
                     var signature = isPlaying + '|' + title + '|' + artist;
                     if (signature !== lastState) {
                         lastState = signature;

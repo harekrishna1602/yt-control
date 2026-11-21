@@ -11,6 +11,9 @@ object AdBlocker {
         "accounts.google.com",
         "accounts.youtube.com",
         "myaccount.google.com",
+        "studio.youtube.com",
+        "gemini.google.com",
+        "generativelanguage.googleapis.com",
         "gds.google.com",
         "ssl.gstatic.com"
     )

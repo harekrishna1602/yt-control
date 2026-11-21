@@ -9,22 +9,22 @@
     <string name="login_screen_title">Google Sign-In</string>
 
     <string name="credit_badge">MADE BY STUDIO MOGLI</string>
-    <string name="credit_title">YT Control v1.0.0</string>
+    <string name="credit_title">YT Control v1.1.0</string>
     <string name="credit_subtitle">✓ Verified Clean  •  100% Malware-Free</string>
-    <string name="credit_body">Take back control of YouTube. Zero ads, zero Shorts, custom Study &amp; Relax environments, and daily timers—with zero data collection.</string>
+    <string name="credit_body">Zero ads, zero Shorts, Study &amp; Relax environments, plus Creator Mode with Outlier Badges, YouTube Studio, and a zero-API-key Gemini AI workbench.</string>
     <string name="credit_team_line">Know someone who needs a website or custom software? Earn 10% on every closed project.</string>
     <string name="btn_refer_earn">Refer &amp; Earn 10%</string>
     <string name="btn_trust_guarantee">Privacy &amp; Security Guarantee</string>
     <string name="btn_visit_site">Visit studiomogli.com</string>
 
     <string name="trust_badge">100% MALWARE-FREE  •  VERIFIED</string>
-    <string name="trust_title">Welcome to YT Control</string>
-    <string name="trust_intro">Distraction-free, ad-free YouTube with Shorts blocked, Study/Relax environments, and daily time limits—built by Studio Mogli.</string>
-    <string name="trust_point_1_title">1. Your Google Account Stays Strictly Private</string>
-    <string name="trust_point_1_body">Sign-in happens directly on Google\'s official login page inside an isolated window. Studio Mogli never sees, touches, or stores your email or password.</string>
-    <string name="trust_point_2_title">2. Why We Technically Cannot Collect Your Data</string>
-    <string name="trust_point_2_body">This app has zero backend servers, zero analytics SDKs, and zero ad trackers. Your environments, channel lists, and daily timers stay 100% offline on your phone.</string>
-    <string name="trust_point_3_title">3. Study &amp; Relax Environments</string>
-    <string name="trust_point_3_body">Tap the top-left pill to switch between Study (Whitelist) and Relax (Blacklist + 45 min/day timer) in one click. Tap Edit to add channels or adjust timers.</string>
-    <string name="btn_trust_got_it">Got It — Start Focused</string>
+    <string name="trust_title">Welcome to YT Control v1.1.0</string>
+    <string name="trust_intro">Distraction-free YouTube + Creator Mode with Outlier Badges, YouTube Studio, and 1-click Gemini AI tools—built by Studio Mogli.</string>
+    <string name="trust_point_1_title">1. Your Google &amp; Gemini Accounts Stay Strictly Private</string>
+    <string name="trust_point_1_body">Sign-in happens directly on Google\'s official login page. Studio Mogli never sees, touches, or stores your credentials or API keys.</string>
+    <string name="trust_point_2_title">2. Zero Backend Servers, Zero Data Collection</string>
+    <string name="trust_point_2_body">All environments, channel lists, timers, and AI prompts run strictly on your device. No analytics SDKs or hidden permissions.</string>
+    <string name="trust_point_3_title">3. Study, Relax &amp; Creator Modes</string>
+    <string name="trust_point_3_body">Tap the top-left pill to cycle Study (Whitelist), Relax (Blacklist + Timer), and Creator (YouTube Studio + Outlier Badges + 1-click Gemini Drawer).</string>
+    <string name="btn_trust_got_it">Got It — Let\'s Go</string>
 </resources>
